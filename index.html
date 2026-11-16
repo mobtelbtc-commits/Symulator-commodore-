@@ -1,11 +1,10 @@
-
 ```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Commodore 64 Simulator</title>
+    <title>Commodore 64 BASIC V2 Simulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -20,18 +19,16 @@
             background-color: var(--c64-light);
             margin: 0;
             padding: 0;
-            /* Using VT323 for that chunky retro pixel font look */
             font-family: 'VT323', 'Courier New', Courier, monospace; 
             text-transform: uppercase;
             overflow: hidden;
         }
 
-        /* The thick border effect of C64 monitors */
         #monitor-border {
             background-color: var(--c64-light);
             width: 100vw;
             height: 100vh;
-            padding: 8vw; /* responsive padding to act as the plastic border */
+            padding: 6vw; 
             box-sizing: border-box;
             display: flex;
             justify-content: center;
@@ -51,11 +48,10 @@
             line-height: 1.2;
             word-wrap: break-word;
             cursor: text;
-            /* Retro glow and shadow */
             box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
         }
 
-        /* Hide scrollbar for cleaner look */
+        /* Ukrycie paska przewijania dla estetyki retro */
         #screen::-webkit-scrollbar {
             display: none;
         }
@@ -64,7 +60,6 @@
             scrollbar-width: none;
         }
 
-        /* The iconic blinking block cursor */
         .cursor {
             display: inline-block;
             width: 12px;
@@ -80,21 +75,20 @@
             50% { opacity: 0; }
         }
 
-        /* Hidden input used to capture keyboard easily on desktop and mobile */
         #hidden-input {
             position: absolute;
             opacity: 0;
             top: -1000px;
             left: -1000px;
+            font-size: 16px; /* Zapobiega zoomowaniu na iOS Safari */
         }
     </style>
 </head>
 <body>
 
-    <div id="monitor-border">
-        <div id="screen" onclick="document.getElementById('hidden-input').focus()">
+    <div id="monitor-border" onclick="document.getElementById('hidden-input').focus()">
+        <div id="screen">
             <div id="output"></div>
-            <!-- The hidden input guarantees mobile keyboard popups work perfectly -->
             <input type="text" id="hidden-input" autocomplete="off" spellcheck="false" autofocus>
         </div>
     </div>
@@ -104,7 +98,6 @@
         const inputEl = document.getElementById('hidden-input');
         const screenEl = document.getElementById('screen');
 
-        // Initial boot text
         let lines = [
             "    **** COMMODORE 64 BASIC V2 ****",
             "",
@@ -113,87 +106,324 @@
             "READY."
         ];
 
-        // Renders the screen content
-        function render() {
-            let html = lines.join("<br>");
-            
-            // Add the current text being typed
-            const currentLine = inputEl.value.toUpperCase();
-            if (html.length > 0) html += "<br>";
-            html += currentLine;
+        // Stan interpretera BASIC
+        let program = {};
+        let variables = {};
+        let isRunning = false;
+        let pc = -1;
+        let gotoFlag = false;
+        let errorFlag = false;
+        let endFlag = false;
 
-            // Add the blinking cursor
-            html += '<span class="cursor"></span>';
+        // Funkcja renderująca zawartość ekranu
+        function render() {
+            let html = lines.map(escapeHTML).join("<br>");
+            
+            // Renderuj bieżącą linię tylko jeśli program nie jest w trakcie działania
+            let currentLine = escapeHTML(inputEl.value.toUpperCase());
+            
+            if (html.length > 0) html += "<br>";
+            if (!isRunning) {
+                html += currentLine;
+                html += '<span class="cursor"></span>';
+            }
             
             outputEl.innerHTML = html;
-
-            // Auto-scroll to the bottom
             screenEl.scrollTop = screenEl.scrollHeight;
         }
 
-        // Print a line to the screen history
+        // Zamienia znaki HTML na byty wizualne C64 (w tym twarde spacje)
+        function escapeHTML(str) {
+            if (typeof str !== 'string') str = String(str);
+            return str
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/ /g, '&nbsp;');
+        }
+
         function printLine(text) {
             lines.push(text);
+            if (lines.length > 250) {
+                lines.shift();
+            }
         }
 
-        // Handle specific commands
-        function processCommand(cmdRaw) {
-            const cmd = cmdRaw.trim().toUpperCase();
+        // Prosty ewaluator wyrażeń dla podzbioru języka BASIC
+        function evaluate(expr) {
+            if (expr === undefined || expr === null) return "";
+            expr = String(expr);
+            if (expr.trim() === "") return "";
             
-            if (cmd === "") {
-                // Do nothing, just empty enter
-            } else if (cmd === "HELP") {
-                printLine("AVAILABLE COMMANDS:");
-                printLine("  HELP   - LISTS COMMANDS");
-                printLine("  CLEAR  - CLEARS THE SCREEN");
-                printLine("  PRINT  - ECHOS TEXT (EG. PRINT HELLO)");
-                printLine("  LOAD   - SIMULATES LOADING FROM TAPE");
-                printLine("  RUN    - EXECUTES LOADED PROGRAM");
-            } else if (cmd === "CLEAR") {
-                lines = [];
-                // Do not print READY. yet, it will be printed at the end
-            } else if (cmd.startsWith("PRINT ")) {
-                printLine(cmd.substring(6));
-            } else if (cmd === "PRINT") {
-                printLine("?SYNTAX ERROR");
-            } else if (cmd === "LOAD") {
-                printLine("PRESS PLAY ON TAPE");
-                printLine("OK");
-                printLine("");
-                printLine("SEARCHING...");
-                printLine("FOUND");
-                printLine("LOADING...");
-            } else if (cmd === "RUN") {
-                printLine("?SYNTAX ERROR  IN 10");
-            } else {
-                printLine("?SYNTAX ERROR");
+            let out = "";
+            let inQuotes = false;
+            let currentVar = "";
+            
+            for (let i = 0; i < expr.length; i++) {
+                let c = expr[i];
+                if (c === '"') { 
+                    inQuotes = !inQuotes; 
+                    out += c; 
+                    continue; 
+                }
+                
+                if (!inQuotes) {
+                    if (/[A-Z0-9\.]/i.test(c)) { 
+                        currentVar += c;
+                    } else {
+                        if (currentVar) {
+                            if (/[A-Z]/i.test(currentVar)) {
+                                let val = variables[currentVar.toUpperCase()];
+                                out += (val !== undefined ? val : 0);
+                            } else {
+                                out += currentVar; 
+                            }
+                            currentVar = "";
+                        }
+                        
+                        // Mapowanie operatorów BASIC na operatory JavaScript
+                        if (c === ';') out += '+';
+                        else if (c === ',') out += '+"    "+';
+                        else if (c === '=') out += '==';
+                        else if (c === '<' && expr[i+1] === '>') { out += '!='; i++; }
+                        else out += c;
+                    }
+                } else {
+                    out += c;
+                }
+            }
+            
+            if (currentVar) {
+                if (/[A-Z]/i.test(currentVar)) {
+                    let val = variables[currentVar.toUpperCase()];
+                    out += (val !== undefined ? val : 0);
+                } else {
+                    out += currentVar;
+                }
             }
 
-            // C64 always returns to READY. after executing a command
-            if (cmd !== "") {
-                printLine("READY.");
+            // Obsługa operatorów logicznych AND / OR
+            out = out.replace(/\bAND\b/gi, '&&').replace(/\bOR\b/gi, '||');
+
+            try {
+                // Bezpieczne użycie konstruktora Function do prostych obliczeń
+                let result = new Function('return ' + out)();
+                if (typeof result === 'boolean') return result ? -1 : 0; // W BASIC true to -1, false to 0
+                return result === undefined ? "" : result;
+            } catch(e) {
+                return "ERROR";
             }
         }
 
-        // Event listeners
+        // Wykonuje pojedynczą linię poleceń
+        async function executeLine(line) {
+            line = line.trim();
+            if (!line) return;
+
+            // 1. Sprawdzenie instrukcji warunkowej IF ... THEN
+            let ifMatch = line.match(/^IF\s+(.+?)\s+THEN\s+(.+)$/i);
+            if (ifMatch) {
+                let cond = ifMatch[1];
+                let statement = ifMatch[2];
+                let condVal = evaluate(cond);
+                if (condVal === "ERROR") {
+                    printLine("?SYNTAX ERROR");
+                    errorFlag = true;
+                    return;
+                }
+                if (condVal) { 
+                    await executeLine(statement);
+                }
+                return;
+            }
+
+            // 2. Sprawdzenie przypisania zmiennej (np. A = 10)
+            let assignMatch = line.match(/^([A-Z][A-Z0-9\$]*)\s*=\s*(.+)$/i);
+            if (assignMatch) {
+                let varName = assignMatch[1].toUpperCase();
+                let val = evaluate(assignMatch[2]);
+                if (val === "ERROR") {
+                    printLine("?SYNTAX ERROR");
+                    errorFlag = true;
+                } else {
+                    variables[varName] = val;
+                }
+                return;
+            }
+
+            // 3. Sprawdzenie głównych komend (PRINT, GOTO, RUN itp.)
+            let cmdMatch = line.match(/^(PRINT|\?|GOTO|LIST|NEW|RUN|CLEAR|END|STOP|REM)(.*)$/i);
+            let cmd = cmdMatch ? cmdMatch[1].toUpperCase() : line.toUpperCase();
+            let args = cmdMatch ? cmdMatch[2] : "";
+
+            switch(cmd) {
+                case 'PRINT':
+                case '?':
+                    let res = evaluate(args);
+                    if (res === "ERROR") {
+                        printLine("?SYNTAX ERROR");
+                        errorFlag = true;
+                    } else {
+                        printLine(res !== undefined ? res.toString() : "");
+                    }
+                    break;
+                case 'GOTO':
+                    let target = parseInt(evaluate(args));
+                    if (program[target] !== undefined) {
+                        pc = target;
+                        gotoFlag = true;
+                    } else {
+                        printLine("?UNDEF'D STATEMENT ERROR");
+                        errorFlag = true;
+                    }
+                    break;
+                case 'STOP':
+                    printLine("BREAK" + (pc !== -1 ? " IN " + pc : ""));
+                    endFlag = true;
+                    break;
+                case 'END':
+                    endFlag = true;
+                    break;
+                case 'LIST':
+                    let keys = Object.keys(program).map(Number).sort((a,b)=>a-b);
+                    for (let n of keys) {
+                        printLine(`${n} ${program[n]}`);
+                    }
+                    break;
+                case 'NEW':
+                    program = {};
+                    variables = {};
+                    break;
+                case 'RUN':
+                    variables = {};
+                    let progKeys = Object.keys(program).map(Number).sort((a,b)=>a-b);
+                    if (progKeys.length > 0) {
+                        pc = progKeys[0];
+                        isRunning = true;
+                    }
+                    break;
+                case 'CLEAR':
+                    lines = [];
+                    break;
+                case 'REM':
+                    // Ignoruj komentarze
+                    break;
+                default:
+                    if (cmd.trim() !== "") {
+                        printLine("?SYNTAX ERROR");
+                        errorFlag = true;
+                    }
+                    break;
+            }
+        }
+
+        // Główna pętla wykonująca załadowany program asynchronicznie
+        function programLoop() {
+            if (!isRunning) return;
+            
+            let line = program[pc];
+            if (line !== undefined) {
+                gotoFlag = false;
+                errorFlag = false;
+                
+                executeLine(line).then(() => {
+                    if (errorFlag || endFlag) {
+                        isRunning = false;
+                        printLine("READY.");
+                        render();
+                        return;
+                    }
+
+                    // Znajdź następną linię, o ile nie wywołano GOTO
+                    if (!gotoFlag) {
+                        let keys = Object.keys(program).map(Number).sort((a,b)=>a-b);
+                        let idx = keys.indexOf(pc);
+                        if (idx > -1 && idx < keys.length - 1) {
+                            pc = keys[idx + 1];
+                        } else {
+                            isRunning = false;
+                            printLine("READY.");
+                        }
+                    }
+                    
+                    render();
+                    
+                    if (isRunning) {
+                        // setTimeout zapobiega zawieszeniu interfejsu przeglądarki w nieskończonych pętlach
+                        setTimeout(programLoop, 10); 
+                    }
+                });
+            } else {
+                isRunning = false;
+                printLine("READY.");
+                render();
+            }
+        }
+
+        // Obsługa wejścia z klawiatury
+        async function handleInput(cmdRaw) {
+            let cmd = cmdRaw.trim();
+            if (cmd === "") return; // Pusty Enter
+            
+            printLine(cmd.toUpperCase());
+
+            // Sprawdzenie, czy wejście zaczyna się od numeru linii (zapis do pamięci programu)
+            let lineNumMatch = cmd.match(/^(\d+)\s*(.*)$/);
+            if (lineNumMatch) {
+                let num = parseInt(lineNumMatch[1]);
+                let code = lineNumMatch[2];
+                if (code === "") {
+                    delete program[num]; // Usunięcie linii
+                } else {
+                    program[num] = code; // Dodanie lub nadpisanie linii
+                }
+                render();
+            } else {
+                // Tryb interaktywny (immediate execution)
+                gotoFlag = false;
+                errorFlag = false;
+                endFlag = false;
+                
+                await executeLine(cmd);
+                
+                if (isRunning) {
+                    programLoop(); // Rozpocznij asynchroniczną pętlę programu
+                } else {
+                    if (!errorFlag && cmd.toUpperCase() !== "CLEAR") {
+                        printLine("READY.");
+                    }
+                    render();
+                }
+            }
+        }
+
         inputEl.addEventListener('input', render);
 
         inputEl.addEventListener('keydown', function(e) {
             if (e.key === 'Enter') {
                 const cmd = inputEl.value;
-                printLine(cmd.toUpperCase());
-                processCommand(cmd);
                 inputEl.value = '';
-                render();
+                
+                if (isRunning) {
+                    // Pozwala ręcznie przerwać pętlę pisząc STOP
+                    if (cmd.toUpperCase() === "STOP") {
+                        isRunning = false;
+                        printLine("BREAK" + (pc !== -1 ? " IN " + pc : ""));
+                        printLine("READY.");
+                        render();
+                    }
+                    return; 
+                }
+                
+                handleInput(cmd);
             }
         });
 
-        // Ensure the input always gets focus when clicking anywhere on the document
+        // Fokusowanie pola po kliknięciu
         document.addEventListener('click', () => {
             inputEl.focus();
         });
 
-        // Initial render
         window.onload = () => {
             inputEl.focus();
             render();
