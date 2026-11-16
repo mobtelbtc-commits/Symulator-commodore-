@@ -1,1 +1,205 @@
 
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Commodore 64 Simulator</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --c64-dark: #352879;
+            --c64-light: #6C5EB5;
+        }
+
+        body {
+            background-color: var(--c64-light);
+            margin: 0;
+            padding: 0;
+            /* Using VT323 for that chunky retro pixel font look */
+            font-family: 'VT323', 'Courier New', Courier, monospace; 
+            text-transform: uppercase;
+            overflow: hidden;
+        }
+
+        /* The thick border effect of C64 monitors */
+        #monitor-border {
+            background-color: var(--c64-light);
+            width: 100vw;
+            height: 100vh;
+            padding: 8vw; /* responsive padding to act as the plastic border */
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        #screen {
+            background-color: var(--c64-dark);
+            color: var(--c64-light);
+            width: 100%;
+            height: 100%;
+            padding: 10px 20px;
+            box-sizing: border-box;
+            overflow-y: auto;
+            position: relative;
+            font-size: 24px;
+            line-height: 1.2;
+            word-wrap: break-word;
+            cursor: text;
+            /* Retro glow and shadow */
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+        }
+
+        /* Hide scrollbar for cleaner look */
+        #screen::-webkit-scrollbar {
+            display: none;
+        }
+        #screen {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+
+        /* The iconic blinking block cursor */
+        .cursor {
+            display: inline-block;
+            width: 12px;
+            height: 20px;
+            background-color: var(--c64-light);
+            vertical-align: text-bottom;
+            animation: blink 1s step-end infinite;
+            margin-left: 2px;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0; }
+        }
+
+        /* Hidden input used to capture keyboard easily on desktop and mobile */
+        #hidden-input {
+            position: absolute;
+            opacity: 0;
+            top: -1000px;
+            left: -1000px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="monitor-border">
+        <div id="screen" onclick="document.getElementById('hidden-input').focus()">
+            <div id="output"></div>
+            <!-- The hidden input guarantees mobile keyboard popups work perfectly -->
+            <input type="text" id="hidden-input" autocomplete="off" spellcheck="false" autofocus>
+        </div>
+    </div>
+
+    <script>
+        const outputEl = document.getElementById('output');
+        const inputEl = document.getElementById('hidden-input');
+        const screenEl = document.getElementById('screen');
+
+        // Initial boot text
+        let lines = [
+            "    **** COMMODORE 64 BASIC V2 ****",
+            "",
+            " 64K RAM SYSTEM  38911 BASIC BYTES FREE",
+            "",
+            "READY."
+        ];
+
+        // Renders the screen content
+        function render() {
+            let html = lines.join("<br>");
+            
+            // Add the current text being typed
+            const currentLine = inputEl.value.toUpperCase();
+            if (html.length > 0) html += "<br>";
+            html += currentLine;
+
+            // Add the blinking cursor
+            html += '<span class="cursor"></span>';
+            
+            outputEl.innerHTML = html;
+
+            // Auto-scroll to the bottom
+            screenEl.scrollTop = screenEl.scrollHeight;
+        }
+
+        // Print a line to the screen history
+        function printLine(text) {
+            lines.push(text);
+        }
+
+        // Handle specific commands
+        function processCommand(cmdRaw) {
+            const cmd = cmdRaw.trim().toUpperCase();
+            
+            if (cmd === "") {
+                // Do nothing, just empty enter
+            } else if (cmd === "HELP") {
+                printLine("AVAILABLE COMMANDS:");
+                printLine("  HELP   - LISTS COMMANDS");
+                printLine("  CLEAR  - CLEARS THE SCREEN");
+                printLine("  PRINT  - ECHOS TEXT (EG. PRINT HELLO)");
+                printLine("  LOAD   - SIMULATES LOADING FROM TAPE");
+                printLine("  RUN    - EXECUTES LOADED PROGRAM");
+            } else if (cmd === "CLEAR") {
+                lines = [];
+                // Do not print READY. yet, it will be printed at the end
+            } else if (cmd.startsWith("PRINT ")) {
+                printLine(cmd.substring(6));
+            } else if (cmd === "PRINT") {
+                printLine("?SYNTAX ERROR");
+            } else if (cmd === "LOAD") {
+                printLine("PRESS PLAY ON TAPE");
+                printLine("OK");
+                printLine("");
+                printLine("SEARCHING...");
+                printLine("FOUND");
+                printLine("LOADING...");
+            } else if (cmd === "RUN") {
+                printLine("?SYNTAX ERROR  IN 10");
+            } else {
+                printLine("?SYNTAX ERROR");
+            }
+
+            // C64 always returns to READY. after executing a command
+            if (cmd !== "") {
+                printLine("READY.");
+            }
+        }
+
+        // Event listeners
+        inputEl.addEventListener('input', render);
+
+        inputEl.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter') {
+                const cmd = inputEl.value;
+                printLine(cmd.toUpperCase());
+                processCommand(cmd);
+                inputEl.value = '';
+                render();
+            }
+        });
+
+        // Ensure the input always gets focus when clicking anywhere on the document
+        document.addEventListener('click', () => {
+            inputEl.focus();
+        });
+
+        // Initial render
+        window.onload = () => {
+            inputEl.focus();
+            render();
+        };
+
+    </script>
+</body>
+</html>
+```
