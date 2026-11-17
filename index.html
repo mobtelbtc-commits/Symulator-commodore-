@@ -4,14 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Commodore 64 Simulator</title>
+    <title>Commodore 64 BASIC Simulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <style>
         :root {
-            /* Prawdziwe barwy z palety VIC-II */
+            /* Klasyczne barwy z palety VIC-II */
             --c64-dark: #352879;
             --c64-light: #6C5EB5;
         }
@@ -30,17 +30,17 @@
             width: 100vw;
         }
 
-        /* Ramka monitora (Border) */
+        /* Gruby border typowy dla monitorów CRT */
         #monitor-border {
             background-color: var(--c64-light);
             width: 100%;
             height: 100%;
-            padding: 8vw; /* Gruby border typowy dla starych CRT */
+            padding: 8vw; 
             box-sizing: border-box;
             display: flex;
         }
 
-        /* Obszar główny ekranu (Background) */
+        /* Ekran główny */
         #screen {
             background-color: var(--c64-dark);
             color: var(--c64-light);
@@ -57,7 +57,7 @@
             box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
         }
 
-        /* Ukrycie paska przewijania (Scrollbar) */
+        /* Ukrycie paska przewijania */
         #screen::-webkit-scrollbar {
             display: none;
         }
@@ -82,13 +82,13 @@
             50% { opacity: 0; }
         }
 
-        /* Ukryty Input dla klawiatur mobilnych */
+        /* Ukryty input gwarantuje wysunięcie klawiatury na iOS/Android */
         #hidden-input {
             position: absolute;
             opacity: 0;
             top: -1000px;
             left: -1000px;
-            font-size: 16px; /* 16px zapobiega auto-zoom na iOS */
+            font-size: 16px; /* Zabezpieczenie przed auto-zoomem na iPhone */
         }
     </style>
 </head>
@@ -114,14 +114,13 @@
             "READY."
         ];
 
-        // Stan interpretera
+        // Stan emulatora
         let program = {};
         let variables = {};
         let isRunning = false;
         let pc = -1; 
-        let errorFlag = false;
 
-        // Renderowanie ekranu
+        // Rysowanie zawartości ekranu
         function render() {
             let html = lines.map(escapeHTML).join("<br>");
             let currentLine = escapeHTML(inputEl.value.toUpperCase());
@@ -133,24 +132,24 @@
             }
             
             outputEl.innerHTML = html;
-            screenEl.scrollTop = screenEl.scrollHeight;
+            screenEl.scrollTop = screenEl.scrollHeight; // Auto-scroll w dół
         }
 
-        // Zabezpieczenie przed HTML Injection i parsowanie spacji
+        // Zabezpieczenie HTML i wymuszanie "twardych spacji" charakterystycznych dla C64
         function escapeHTML(str) {
             if (typeof str !== 'string') str = String(str);
             return str.replace(/&/g, '&amp;')
                       .replace(/</g, '&lt;')
                       .replace(/>/g, '&gt;')
-                      .replace(/ /g, '&nbsp;'); // C64 twarde spacje
+                      .replace(/ /g, '&nbsp;'); 
         }
 
         function printLine(text) {
             lines.push(text);
-            if (lines.length > 300) lines.shift(); // Bufor historii
+            if (lines.length > 400) lines.shift(); // Bufor historii ekranu by uniknąć wycieków pamięci
         }
 
-        // Parser matematyczny i tekstowy
+        // Prosty system ewaluacji zmiennych i operacji matematycznych
         function evaluate(expr) {
             if (!expr || expr.trim() === "") return "";
             
@@ -178,10 +177,8 @@
                             }
                             currentVar = "";
                         }
-                        
-                        // Mapowanie separatorów BASIC
-                        if (c === ';') out += '+'; // PRINT A;B -> A+B
-                        else if (c === ',') out += '+"    "+'; // PRINT A,B -> odstęp
+                        if (c === ';') out += '+';
+                        else if (c === ',') out += '+"    "+';
                         else if (c === '=') out += '==';
                         else out += c;
                     }
@@ -199,7 +196,6 @@
             }
 
             try {
-                // Ewaluacja wyrażenia w piaskownicy (JS Function)
                 let result = new Function('return ' + out)();
                 return result === undefined ? "" : result;
             } catch(e) {
@@ -207,17 +203,17 @@
             }
         }
 
-        // Uruchomienie pojedynczej linii kodu
+        // Wykonanie pojedynczej komendy
         function executeLine(line, lineNumber = null) {
-            line = line.trim();
+            // FIX: Obsługa dziwnych konstrukcji "GO TO", sklejonych poleceń itp.
+            line = line.trim().replace(/\bGO\s+TO\b/gi, 'GOTO');
             if (!line) return;
 
-            // Główny Parser Komend (teraz poprawnie ignoruje brak spacji, np. PRINT"MOBY")
-            // Złapie "PRINT" jako cmdMatch[1] i '"MOBY"' jako cmdMatch[2]
-            let cmdMatch = line.match(/^\s*(PRINT|\?|GOTO|LIST|NEW|RUN|CLEAR|END|STOP|REM)(.*)$/i);
+            // Wyłapuje komendę ignorując ilość spacji za nią (lub ich całkowity brak np. GOTO10)
+            let cmdMatch = line.match(/^\s*(PRINT|\?|GOTO|LIST|NEW|RUN|CLEAR|END|STOP|REM)\s*(.*)$/i);
             
-            // Jeśli nie złapano komendy, spróbuj przypisania zmiennej (np. A=10)
             if (!cmdMatch) {
+                // Być może to przypisanie zmiennej (A = 10)
                 let assignMatch = line.match(/^([A-Z][A-Z0-9\$]*)\s*=\s*(.+)$/i);
                 if (assignMatch) {
                     let val = evaluate(assignMatch[2]);
@@ -230,7 +226,7 @@
             }
 
             let cmd = cmdMatch[1].toUpperCase();
-            let args = cmdMatch[2]; // Może zaczynać się od razu od cudzysłowu lub liczby
+            let args = cmdMatch[2]; // Argumenty po komendzie
 
             switch(cmd) {
                 case 'PRINT':
@@ -258,7 +254,7 @@
                     variables = {};
                     break;
                 case 'RUN':
-                    variables = {}; // Wyczyszczenie zmiennych przy starcie
+                    variables = {};
                     let progKeys = Object.keys(program).map(Number).sort((a,b)=>a-b);
                     if (progKeys.length > 0) {
                         pc = progKeys[0];
@@ -274,16 +270,21 @@
                     if (lineNumber !== null) printLine(`BREAK IN ${lineNumber}`);
                     break;
                 case 'REM':
-                    break; // Komentarz, ignoruj
+                    break; 
             }
         }
 
-        // Pętla wykonująca program z numerowanych linii
-        function programLoop() {
-            if (!isRunning) return;
-            
-            let line = program[pc];
-            if (line !== undefined) {
+        // Asynchroniczna pętla zapobiegająca freezom przeglądarki w przypadku nieskończonych pętli
+        async function programLoop() {
+            while (isRunning) {
+                let line = program[pc];
+                if (line === undefined) {
+                    isRunning = false;
+                    printLine("READY.");
+                    render();
+                    break;
+                }
+
                 let currentPc = pc;
                 try {
                     executeLine(line, currentPc);
@@ -292,10 +293,10 @@
                     printLine(`?${err} ERROR IN ${currentPc}`);
                     printLine("READY.");
                     render();
-                    return;
+                    break;
                 }
 
-                // Przejście do następnej linii jeśli GOTO nie zmieniło PC
+                // Przeskocz do następnej linii, chyba że program wykonał skok (GOTO)
                 if (pc === currentPc && isRunning) {
                     let keys = Object.keys(program).map(Number).sort((a,b)=>a-b);
                     let idx = keys.indexOf(pc);
@@ -309,17 +310,14 @@
                 
                 render();
                 
-                if (isRunning) {
-                    // setTimeout asynchronicznie wykonuje pętlę (zapobiega blokadzie przeglądarki)
-                    setTimeout(programLoop, 10); 
-                }
+                // Kluczowy element - opóźnienie zapobiegające zamrożeniu okna przy (np. 10 PRINT "X", 20 GOTO 10)
+                await new Promise(r => setTimeout(r, 10)); 
             }
         }
 
-        // Główna funkcja obsługi wejścia od użytkownika
+        // Wejście klawiatury
         function handleInput(rawCmd) {
-            // FIX KLAWIATUR MOBILNYCH: 
-            // Zamienia inteligentne cudzysłowy (“ ” ‘ ’) na proste (" '), które rozumie parser
+            // Zamiana cudzysłowów ze smartfonów na tradycyjne
             let cmd = rawCmd.trim()
                 .replace(/[\u201C\u201D]/g, '"')
                 .replace(/[\u2018\u2019]/g, "'");
@@ -328,25 +326,25 @@
             
             printLine(cmd.toUpperCase());
 
-            // 1. Tryb Programowania (Zaczyna się od liczby np. "10 PRINT...")
+            // Check czy użytkownik wpisał kod programu np. "10 PRINT..."
             let lineNumMatch = cmd.match(/^(\d+)\s*(.*)$/);
             if (lineNumMatch) {
                 let num = parseInt(lineNumMatch[1]);
                 let code = lineNumMatch[2];
                 if (code === "") {
-                    delete program[num]; // Usuwa linię
+                    delete program[num];
                 } else {
-                    program[num] = code; // Dodaje/Nadpisuje linię
+                    program[num] = code;
                 }
                 render();
                 return;
             } 
 
-            // 2. Tryb Wprowadzania Bezpośredniego (Immediate Mode)
+            // Tryb bezpośredni (Immediate)
             try {
                 executeLine(cmd);
                 if (isRunning) {
-                    programLoop();
+                    programLoop(); // Rozpoczyna pętlę dla komendy RUN
                 } else {
                     if (cmd.toUpperCase() !== "CLEAR") printLine("READY.");
                     render();
@@ -358,7 +356,6 @@
             }
         }
 
-        // Nasłuchiwanie zdarzeń
         inputEl.addEventListener('input', render);
 
         inputEl.addEventListener('keydown', function(e) {
@@ -366,8 +363,9 @@
                 const cmd = inputEl.value;
                 inputEl.value = '';
                 
+                // Awaryjne ręczne zatrzymywanie wykonywania nieskończonej pętli poleceniem STOP wpisanym w trakcie działania
                 if (isRunning) {
-                    if (cmd.toUpperCase() === "STOP") {
+                    if (cmd.toUpperCase().trim() === "STOP") {
                         isRunning = false;
                         printLine(`BREAK IN ${pc}`);
                         printLine("READY.");
@@ -379,7 +377,7 @@
             }
         });
 
-        // Wymuszanie focusu na input (kluczowe dla dotyku na smartfonach)
+        // Wymuszenie klawiatury na urządzeniach dotykowych
         document.addEventListener('click', () => {
             inputEl.focus();
         });
