@@ -4,13 +4,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Commodore 64 BASIC V2 Simulator</title>
+    <title>Commodore 64 Simulator</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=VT323&display=swap" rel="stylesheet">
     <style>
         :root {
+            /* Prawdziwe barwy z palety VIC-II */
             --c64-dark: #352879;
             --c64-light: #6C5EB5;
         }
@@ -22,19 +23,24 @@
             font-family: 'VT323', 'Courier New', Courier, monospace; 
             text-transform: uppercase;
             overflow: hidden;
-        }
-
-        #monitor-border {
-            background-color: var(--c64-light);
-            width: 100vw;
-            height: 100vh;
-            padding: 6vw; 
-            box-sizing: border-box;
             display: flex;
             justify-content: center;
             align-items: center;
+            height: 100vh;
+            width: 100vw;
         }
 
+        /* Ramka monitora (Border) */
+        #monitor-border {
+            background-color: var(--c64-light);
+            width: 100%;
+            height: 100%;
+            padding: 8vw; /* Gruby border typowy dla starych CRT */
+            box-sizing: border-box;
+            display: flex;
+        }
+
+        /* Obszar główny ekranu (Background) */
         #screen {
             background-color: var(--c64-dark);
             color: var(--c64-light);
@@ -48,10 +54,10 @@
             line-height: 1.2;
             word-wrap: break-word;
             cursor: text;
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.6);
         }
 
-        /* Ukrycie paska przewijania dla estetyki retro */
+        /* Ukrycie paska przewijania (Scrollbar) */
         #screen::-webkit-scrollbar {
             display: none;
         }
@@ -60,6 +66,7 @@
             scrollbar-width: none;
         }
 
+        /* Mrugający kursor C64 */
         .cursor {
             display: inline-block;
             width: 12px;
@@ -75,12 +82,13 @@
             50% { opacity: 0; }
         }
 
+        /* Ukryty Input dla klawiatur mobilnych */
         #hidden-input {
             position: absolute;
             opacity: 0;
             top: -1000px;
             left: -1000px;
-            font-size: 16px; /* Zapobiega zoomowaniu na iOS Safari */
+            font-size: 16px; /* 16px zapobiega auto-zoom na iOS */
         }
     </style>
 </head>
@@ -106,20 +114,16 @@
             "READY."
         ];
 
-        // Stan interpretera BASIC
+        // Stan interpretera
         let program = {};
         let variables = {};
         let isRunning = false;
-        let pc = -1;
-        let gotoFlag = false;
+        let pc = -1; 
         let errorFlag = false;
-        let endFlag = false;
 
-        // Funkcja renderująca zawartość ekranu
+        // Renderowanie ekranu
         function render() {
             let html = lines.map(escapeHTML).join("<br>");
-            
-            // Renderuj bieżącą linię tylko jeśli program nie jest w trakcie działania
             let currentLine = escapeHTML(inputEl.value.toUpperCase());
             
             if (html.length > 0) html += "<br>";
@@ -132,28 +136,23 @@
             screenEl.scrollTop = screenEl.scrollHeight;
         }
 
-        // Zamienia znaki HTML na byty wizualne C64 (w tym twarde spacje)
+        // Zabezpieczenie przed HTML Injection i parsowanie spacji
         function escapeHTML(str) {
             if (typeof str !== 'string') str = String(str);
-            return str
-                .replace(/&/g, '&amp;')
-                .replace(/</g, '&lt;')
-                .replace(/>/g, '&gt;')
-                .replace(/ /g, '&nbsp;');
+            return str.replace(/&/g, '&amp;')
+                      .replace(/</g, '&lt;')
+                      .replace(/>/g, '&gt;')
+                      .replace(/ /g, '&nbsp;'); // C64 twarde spacje
         }
 
         function printLine(text) {
             lines.push(text);
-            if (lines.length > 250) {
-                lines.shift();
-            }
+            if (lines.length > 300) lines.shift(); // Bufor historii
         }
 
-        // Prosty ewaluator wyrażeń dla podzbioru języka BASIC
+        // Parser matematyczny i tekstowy
         function evaluate(expr) {
-            if (expr === undefined || expr === null) return "";
-            expr = String(expr);
-            if (expr.trim() === "") return "";
+            if (!expr || expr.trim() === "") return "";
             
             let out = "";
             let inQuotes = false;
@@ -173,19 +172,17 @@
                     } else {
                         if (currentVar) {
                             if (/[A-Z]/i.test(currentVar)) {
-                                let val = variables[currentVar.toUpperCase()];
-                                out += (val !== undefined ? val : 0);
+                                out += (variables[currentVar.toUpperCase()] !== undefined ? variables[currentVar.toUpperCase()] : 0);
                             } else {
                                 out += currentVar; 
                             }
                             currentVar = "";
                         }
                         
-                        // Mapowanie operatorów BASIC na operatory JavaScript
-                        if (c === ';') out += '+';
-                        else if (c === ',') out += '+"    "+';
+                        // Mapowanie separatorów BASIC
+                        if (c === ';') out += '+'; // PRINT A;B -> A+B
+                        else if (c === ',') out += '+"    "+'; // PRINT A,B -> odstęp
                         else if (c === '=') out += '==';
-                        else if (c === '<' && expr[i+1] === '>') { out += '!='; i++; }
                         else out += c;
                     }
                 } else {
@@ -195,94 +192,60 @@
             
             if (currentVar) {
                 if (/[A-Z]/i.test(currentVar)) {
-                    let val = variables[currentVar.toUpperCase()];
-                    out += (val !== undefined ? val : 0);
+                    out += (variables[currentVar.toUpperCase()] !== undefined ? variables[currentVar.toUpperCase()] : 0);
                 } else {
                     out += currentVar;
                 }
             }
 
-            // Obsługa operatorów logicznych AND / OR
-            out = out.replace(/\bAND\b/gi, '&&').replace(/\bOR\b/gi, '||');
-
             try {
-                // Bezpieczne użycie konstruktora Function do prostych obliczeń
+                // Ewaluacja wyrażenia w piaskownicy (JS Function)
                 let result = new Function('return ' + out)();
-                if (typeof result === 'boolean') return result ? -1 : 0; // W BASIC true to -1, false to 0
                 return result === undefined ? "" : result;
             } catch(e) {
                 return "ERROR";
             }
         }
 
-        // Wykonuje pojedynczą linię poleceń
-        async function executeLine(line) {
+        // Uruchomienie pojedynczej linii kodu
+        function executeLine(line, lineNumber = null) {
             line = line.trim();
             if (!line) return;
 
-            // 1. Sprawdzenie instrukcji warunkowej IF ... THEN
-            let ifMatch = line.match(/^IF\s+(.+?)\s+THEN\s+(.+)$/i);
-            if (ifMatch) {
-                let cond = ifMatch[1];
-                let statement = ifMatch[2];
-                let condVal = evaluate(cond);
-                if (condVal === "ERROR") {
-                    printLine("?SYNTAX ERROR");
-                    errorFlag = true;
+            // Główny Parser Komend (teraz poprawnie ignoruje brak spacji, np. PRINT"MOBY")
+            // Złapie "PRINT" jako cmdMatch[1] i '"MOBY"' jako cmdMatch[2]
+            let cmdMatch = line.match(/^\s*(PRINT|\?|GOTO|LIST|NEW|RUN|CLEAR|END|STOP|REM)(.*)$/i);
+            
+            // Jeśli nie złapano komendy, spróbuj przypisania zmiennej (np. A=10)
+            if (!cmdMatch) {
+                let assignMatch = line.match(/^([A-Z][A-Z0-9\$]*)\s*=\s*(.+)$/i);
+                if (assignMatch) {
+                    let val = evaluate(assignMatch[2]);
+                    if (val === "ERROR") throw "SYNTAX";
+                    variables[assignMatch[1].toUpperCase()] = val;
                     return;
-                }
-                if (condVal) { 
-                    await executeLine(statement);
-                }
-                return;
-            }
-
-            // 2. Sprawdzenie przypisania zmiennej (np. A = 10)
-            let assignMatch = line.match(/^([A-Z][A-Z0-9\$]*)\s*=\s*(.+)$/i);
-            if (assignMatch) {
-                let varName = assignMatch[1].toUpperCase();
-                let val = evaluate(assignMatch[2]);
-                if (val === "ERROR") {
-                    printLine("?SYNTAX ERROR");
-                    errorFlag = true;
                 } else {
-                    variables[varName] = val;
+                    throw "SYNTAX";
                 }
-                return;
             }
 
-            // 3. Sprawdzenie głównych komend (PRINT, GOTO, RUN itp.)
-            let cmdMatch = line.match(/^(PRINT|\?|GOTO|LIST|NEW|RUN|CLEAR|END|STOP|REM)(.*)$/i);
-            let cmd = cmdMatch ? cmdMatch[1].toUpperCase() : line.toUpperCase();
-            let args = cmdMatch ? cmdMatch[2] : "";
+            let cmd = cmdMatch[1].toUpperCase();
+            let args = cmdMatch[2]; // Może zaczynać się od razu od cudzysłowu lub liczby
 
             switch(cmd) {
                 case 'PRINT':
                 case '?':
                     let res = evaluate(args);
-                    if (res === "ERROR") {
-                        printLine("?SYNTAX ERROR");
-                        errorFlag = true;
-                    } else {
-                        printLine(res !== undefined ? res.toString() : "");
-                    }
+                    if (res === "ERROR") throw "SYNTAX";
+                    printLine(res.toString());
                     break;
                 case 'GOTO':
                     let target = parseInt(evaluate(args));
                     if (program[target] !== undefined) {
                         pc = target;
-                        gotoFlag = true;
                     } else {
-                        printLine("?UNDEF'D STATEMENT ERROR");
-                        errorFlag = true;
+                        throw "UNDEF'D STATEMENT";
                     }
-                    break;
-                case 'STOP':
-                    printLine("BREAK" + (pc !== -1 ? " IN " + pc : ""));
-                    endFlag = true;
-                    break;
-                case 'END':
-                    endFlag = true;
                     break;
                 case 'LIST':
                     let keys = Object.keys(program).map(Number).sort((a,b)=>a-b);
@@ -295,7 +258,7 @@
                     variables = {};
                     break;
                 case 'RUN':
-                    variables = {};
+                    variables = {}; // Wyczyszczenie zmiennych przy starcie
                     let progKeys = Object.keys(program).map(Number).sort((a,b)=>a-b);
                     if (progKeys.length > 0) {
                         pc = progKeys[0];
@@ -305,98 +268,97 @@
                 case 'CLEAR':
                     lines = [];
                     break;
+                case 'END':
+                case 'STOP':
+                    isRunning = false;
+                    if (lineNumber !== null) printLine(`BREAK IN ${lineNumber}`);
+                    break;
                 case 'REM':
-                    // Ignoruj komentarze
-                    break;
-                default:
-                    if (cmd.trim() !== "") {
-                        printLine("?SYNTAX ERROR");
-                        errorFlag = true;
-                    }
-                    break;
+                    break; // Komentarz, ignoruj
             }
         }
 
-        // Główna pętla wykonująca załadowany program asynchronicznie
+        // Pętla wykonująca program z numerowanych linii
         function programLoop() {
             if (!isRunning) return;
             
             let line = program[pc];
             if (line !== undefined) {
-                gotoFlag = false;
-                errorFlag = false;
-                
-                executeLine(line).then(() => {
-                    if (errorFlag || endFlag) {
+                let currentPc = pc;
+                try {
+                    executeLine(line, currentPc);
+                } catch (err) {
+                    isRunning = false;
+                    printLine(`?${err} ERROR IN ${currentPc}`);
+                    printLine("READY.");
+                    render();
+                    return;
+                }
+
+                // Przejście do następnej linii jeśli GOTO nie zmieniło PC
+                if (pc === currentPc && isRunning) {
+                    let keys = Object.keys(program).map(Number).sort((a,b)=>a-b);
+                    let idx = keys.indexOf(pc);
+                    if (idx > -1 && idx < keys.length - 1) {
+                        pc = keys[idx + 1];
+                    } else {
                         isRunning = false;
                         printLine("READY.");
-                        render();
-                        return;
                     }
-
-                    // Znajdź następną linię, o ile nie wywołano GOTO
-                    if (!gotoFlag) {
-                        let keys = Object.keys(program).map(Number).sort((a,b)=>a-b);
-                        let idx = keys.indexOf(pc);
-                        if (idx > -1 && idx < keys.length - 1) {
-                            pc = keys[idx + 1];
-                        } else {
-                            isRunning = false;
-                            printLine("READY.");
-                        }
-                    }
-                    
-                    render();
-                    
-                    if (isRunning) {
-                        // setTimeout zapobiega zawieszeniu interfejsu przeglądarki w nieskończonych pętlach
-                        setTimeout(programLoop, 10); 
-                    }
-                });
-            } else {
-                isRunning = false;
-                printLine("READY.");
+                }
+                
                 render();
+                
+                if (isRunning) {
+                    // setTimeout asynchronicznie wykonuje pętlę (zapobiega blokadzie przeglądarki)
+                    setTimeout(programLoop, 10); 
+                }
             }
         }
 
-        // Obsługa wejścia z klawiatury
-        async function handleInput(cmdRaw) {
-            let cmd = cmdRaw.trim();
-            if (cmd === "") return; // Pusty Enter
+        // Główna funkcja obsługi wejścia od użytkownika
+        function handleInput(rawCmd) {
+            // FIX KLAWIATUR MOBILNYCH: 
+            // Zamienia inteligentne cudzysłowy (“ ” ‘ ’) na proste (" '), które rozumie parser
+            let cmd = rawCmd.trim()
+                .replace(/[\u201C\u201D]/g, '"')
+                .replace(/[\u2018\u2019]/g, "'");
+
+            if (cmd === "") return;
             
             printLine(cmd.toUpperCase());
 
-            // Sprawdzenie, czy wejście zaczyna się od numeru linii (zapis do pamięci programu)
+            // 1. Tryb Programowania (Zaczyna się od liczby np. "10 PRINT...")
             let lineNumMatch = cmd.match(/^(\d+)\s*(.*)$/);
             if (lineNumMatch) {
                 let num = parseInt(lineNumMatch[1]);
                 let code = lineNumMatch[2];
                 if (code === "") {
-                    delete program[num]; // Usunięcie linii
+                    delete program[num]; // Usuwa linię
                 } else {
-                    program[num] = code; // Dodanie lub nadpisanie linii
+                    program[num] = code; // Dodaje/Nadpisuje linię
                 }
                 render();
-            } else {
-                // Tryb interaktywny (immediate execution)
-                gotoFlag = false;
-                errorFlag = false;
-                endFlag = false;
-                
-                await executeLine(cmd);
-                
+                return;
+            } 
+
+            // 2. Tryb Wprowadzania Bezpośredniego (Immediate Mode)
+            try {
+                executeLine(cmd);
                 if (isRunning) {
-                    programLoop(); // Rozpocznij asynchroniczną pętlę programu
+                    programLoop();
                 } else {
-                    if (!errorFlag && cmd.toUpperCase() !== "CLEAR") {
-                        printLine("READY.");
-                    }
+                    if (cmd.toUpperCase() !== "CLEAR") printLine("READY.");
                     render();
                 }
+            } catch (err) {
+                printLine(`?${err} ERROR`);
+                printLine("READY.");
+                render();
             }
         }
 
+        // Nasłuchiwanie zdarzeń
         inputEl.addEventListener('input', render);
 
         inputEl.addEventListener('keydown', function(e) {
@@ -405,21 +367,19 @@
                 inputEl.value = '';
                 
                 if (isRunning) {
-                    // Pozwala ręcznie przerwać pętlę pisząc STOP
                     if (cmd.toUpperCase() === "STOP") {
                         isRunning = false;
-                        printLine("BREAK" + (pc !== -1 ? " IN " + pc : ""));
+                        printLine(`BREAK IN ${pc}`);
                         printLine("READY.");
                         render();
                     }
                     return; 
                 }
-                
                 handleInput(cmd);
             }
         });
 
-        // Fokusowanie pola po kliknięciu
+        // Wymuszanie focusu na input (kluczowe dla dotyku na smartfonach)
         document.addEventListener('click', () => {
             inputEl.focus();
         });
